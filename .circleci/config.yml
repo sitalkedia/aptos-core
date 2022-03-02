@@ -54,10 +54,10 @@ workflows:
   build-test-deploy:
     jobs:
 #      - build-benchmarks
-      - crypto
+#      - crypto
       - e2e-test
-      - lint
-      - unit-test
+#      - lint
+#      - unit-test
 commands:
   dev-setup:
     steps:
@@ -75,12 +75,9 @@ commands:
   run-e2e-tests:
     steps:
       - run: |
-          echo -e "This runner will run these tests\n$(cat /tmp/tests_to_run)"
-          set +e
-          num_fails=0
-          export RUST_BACKTRACE=full
-          failed_tests=
-          for target in $(cat /tmp/tests_to_run) ; do
+          MAX_CONCURRENT=2 # Should be able to run approximately 1 for every 3-4 CPUs
+          run_one() {
+            target=$1
             retry=0
             status=1
             while [[ $status != 0 && $retry < 3 ]]; do
@@ -93,9 +90,32 @@ commands:
             done
 
             if [[ $status != 0 ]] ; then
-              num_fails=$((num_fails + 1))
               echo failed to execute $target
-              break
+              exit $status
             fi
+          }
+
+          echo -e "This runner will run these tests\n$(cat /tmp/tests_to_run)"
+          set +e
+          export RUST_BACKTRACE=full
+          count=0
+          for target in $(cat /tmp/tests_to_run); do
+            if [[ $count == $MAX_CONCURRENT ]]; then
+              wait -n
+              status=$?
+              if [[ $status != 0 ]]; then
+                exit $status
+              fi
+              count=$((count - 1))
+            fi
+            echo $target
+            run_one $target &
+            count=$((count + 1))
+          done
+
+          status=0
+          while [[ $status == 0 ]]; do
+            wait -n
+            status=$?
           done
           exit $status
