@@ -21,11 +21,12 @@ use warp::{
     reject::{LengthRequired, MethodNotAllowed, PayloadTooLarge, UnsupportedMediaType},
     reply, Filter, Rejection, Reply,
 };
+use warp::http::HeaderValue;
 
 const OPEN_API_HTML: &str = include_str!("../doc/spec.html");
 const OPEN_API_SPEC: &str = include_str!("../doc/openapi.yaml");
 
-pub fn routes(context: Context) -> impl Filter<Extract = impl Reply, Error = Infallible> + Clone {
+pub fn routes(context: Context) -> impl Filter<Extract=impl Reply, Error=Infallible> + Clone {
     index(context.clone())
         .or(openapi_spec())
         .or(accounts::get_account(context.clone()))
@@ -47,8 +48,6 @@ pub fn routes(context: Context) -> impl Filter<Extract = impl Reply, Error = Inf
         .or(events::get_events_by_event_key(context.clone()))
         .or(events::get_events_by_event_handle(context.clone()))
         .or(context.health_check_route().with(metrics("health_check")))
-        // jsonrpc routes must before `recover` and after `index`
-        // so that POST '/' can be handled by jsonrpc routes instead of `index` route
         .with(
             warp::cors()
                 .allow_any_origin()
@@ -62,7 +61,7 @@ pub fn routes(context: Context) -> impl Filter<Extract = impl Reply, Error = Inf
 
 // GET /openapi.yaml
 // GET /spec.html
-pub fn openapi_spec() -> BoxedFilter<(impl Reply,)> {
+pub fn openapi_spec() -> BoxedFilter<(impl Reply, )> {
     let spec = warp::path!("openapi.yaml")
         .and(warp::get())
         .map(|| OPEN_API_SPEC)
@@ -77,7 +76,7 @@ pub fn openapi_spec() -> BoxedFilter<(impl Reply,)> {
 }
 
 // GET /
-pub fn index(context: Context) -> BoxedFilter<(impl Reply,)> {
+pub fn index(context: Context) -> BoxedFilter<(impl Reply, )> {
     warp::path::end()
         .and(warp::get())
         .and(context.filter())
@@ -124,7 +123,9 @@ async fn handle_rejection(err: Rejection) -> Result<impl Reply, Infallible> {
         code = StatusCode::INTERNAL_SERVER_ERROR;
         body = reply::json(&Error::new(code, format!("unexpected error: {:?}", err)));
     }
-    Ok(reply::with_status(body, code))
+    let mut rep = reply::with_status(body, code).into_response();
+    rep.headers_mut().insert("access-control-allow-origin", HeaderValue::from_static("*"));
+    Ok(rep)
 }
 
 fn open_api_html() -> String {
