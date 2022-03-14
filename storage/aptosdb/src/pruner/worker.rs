@@ -79,7 +79,7 @@ impl Worker {
     fn record_progress(&mut self) {
         let mut updated_least_readable_versions: Vec<Version> = Vec::new();
         for x in &self.db_pruners {
-            updated_least_readable_versions.push(x.lock().least_readable_version().clone())
+            updated_least_readable_versions.push(x.lock().least_readable_version())
         }
         *self.least_readable_versions.lock() = updated_least_readable_versions;
     }
